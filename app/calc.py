@@ -28,6 +28,20 @@ def fmt_precise(value: Decimal) -> str:
     return f"{value:.10g}"
 
 
+PCT_QUANT = Decimal("0.0001")
+
+
+def fmt_pct(value: Decimal, signed: bool = False) -> str:
+    """把相对值（小数）格式化为百分比字符串，如 0.05123 -> '5.123%'；signed 时正数补 '+'。"""
+    pct = (value * Decimal(100)).quantize(PCT_QUANT)
+    text = format(pct, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    if signed and pct > 0:
+        text = "+" + text
+    return text + "%"
+
+
 @dataclass
 class Step:
     tube: int                      # 管号（1 起）
@@ -146,3 +160,144 @@ def compute_plan(
         )
 
     return Plan(steps=steps, total_stock=transfer_in[1], total_diluent=total_diluent)
+
+
+@dataclass
+class ReviewStep:
+    tube: int                          # 管号（1 起）
+    source: str                        # 取液来源：母液 / 管 i-1
+    target_concentration: Decimal      # 本管目标浓度
+    actual_transfer_in: Decimal        # 实际从上一级取入体积
+    actual_diluent: Decimal            # 实际加入稀释液体积
+    actual_prepare_volume: Decimal     # 实配总量 = 实际取入 + 实际加液
+    actual_concentration: Decimal      # 实算浓度（按母液或上一管实算浓度回算）
+    transfer_out: Decimal              # 下一管实际从本管取走的体积（末管为 0）
+    remaining_volume: Decimal          # 余量 = 实配总量 - 下一管实际取液（末管等于实配总量）
+    retained_volume: Decimal           # 本管要求保留体积
+    relative_deviation: Decimal        # 相对偏差（小数，有符号）：(实算浓度 - 目标浓度) / 目标浓度
+    tolerance: Decimal                 # 目标浓度相对容差（小数，如 0.05 表示 ±5%）
+    concentration_ok: bool = True      # |相对偏差| <= 容差
+    remaining_ok: bool = True          # 余量 >= 要求保留体积（实配总量还须 > 0 才能计算浓度）
+    issues: List[str] = field(default_factory=list)
+
+    @property
+    def passed(self) -> bool:
+        return not self.issues
+
+
+@dataclass
+class Review:
+    steps: List[ReviewStep]
+
+    @property
+    def passed(self) -> bool:
+        return all(s.passed for s in self.steps)
+
+    def to_dict(self) -> dict:
+        return {
+            "passed": self.passed,
+            "steps": [
+                {
+                    "tube": s.tube,
+                    "source": s.source,
+                    "target_concentration": fmt(s.target_concentration),
+                    "actual_transfer_in": fmt(s.actual_transfer_in),
+                    "actual_diluent": fmt(s.actual_diluent),
+                    "actual_prepare_volume": fmt(s.actual_prepare_volume),
+                    "actual_concentration": fmt(s.actual_concentration),
+                    "transfer_out": fmt(s.transfer_out),
+                    "remaining_volume": fmt(s.remaining_volume),
+                    "retained_volume": fmt(s.retained_volume),
+                    "relative_deviation": fmt_pct(s.relative_deviation, signed=True),
+                    "relative_deviation_abs": fmt_pct(abs(s.relative_deviation)),
+                    "tolerance": fmt_pct(s.tolerance),
+                    "concentration_ok": s.concentration_ok,
+                    "remaining_ok": s.remaining_ok,
+                    "passed": s.passed,
+                    "issues": s.issues,
+                }
+                for s in self.steps
+            ],
+        }
+
+
+def compute_review(
+    stock_concentration: Decimal,
+    targets: List[Decimal],
+    retained: List[Decimal],
+    actual_transfer_in: List[Decimal],
+    actual_diluent: List[Decimal],
+    tolerance: Decimal,
+) -> Review:
+    """执行复核。
+
+    1. 按管序逐管回算实际浓度：
+       第 1 管以母液浓度为上一级浓度，第 i 管以第 i-1 管的实算浓度为上一级浓度，
+       实算浓度 = 上一级浓度 × 实际取入量 / 实配总量（实配总量 = 实际取入 + 实际加液）；
+    2. 逐管计算余量：实配总量扣除下一管实际取液量，末管余量等于其实配总量；
+    3. 分别标出浓度超差（|相对偏差| > 容差）与余量低于要求保留体积的原因。
+    """
+    n = len(targets)
+    steps: List[ReviewStep] = []
+    prev_actual_conc = stock_concentration
+
+    for i in range(1, n + 1):
+        transfer_in_i = actual_transfer_in[i - 1]
+        diluent_i = actual_diluent[i - 1]
+        prepare_i = transfer_in_i + diluent_i
+        transfer_out = actual_transfer_in[i] if i < n else Decimal(0)
+        remaining = prepare_i - transfer_out
+
+        issues: List[str] = []
+        if prepare_i <= 0:
+            # 取入量与加液量之和不大于 0，无法回算浓度
+            actual_conc = Decimal(0)
+            deviation = Decimal(0)
+            concentration_ok = False
+            issues.append("实配总量（实际取入 + 实际加稀释液）不大于 0，无法计算实际浓度")
+        else:
+            actual_conc = prev_actual_conc * transfer_in_i / prepare_i
+            deviation = (actual_conc - targets[i - 1]) / targets[i - 1]
+            concentration_ok = abs(deviation) <= tolerance
+            if not concentration_ok:
+                issues.append(
+                    f"浓度超差：实际浓度 {fmt(actual_conc)} 相对目标浓度偏差 "
+                    f"{fmt_pct(deviation, signed=True)}，超出容差 ±{fmt_pct(tolerance)}"
+                )
+
+        remaining_ok = remaining >= retained[i - 1]
+        if not remaining_ok:
+            if remaining < 0:
+                issues.append(
+                    f"余量不足：实配总量 {fmt(prepare_i)} 扣除下一管实际取液 "
+                    f"{fmt(transfer_out)} 后为 {fmt(remaining)}，低于要求保留 "
+                    f"{fmt(retained[i - 1])}"
+                )
+            else:
+                issues.append(
+                    f"余量 {fmt(remaining)} 低于该管要求保留体积 {fmt(retained[i - 1])}"
+                )
+
+        steps.append(
+            ReviewStep(
+                tube=i,
+                source="母液" if i == 1 else f"管 {i - 1}",
+                target_concentration=targets[i - 1],
+                actual_transfer_in=transfer_in_i,
+                actual_diluent=diluent_i,
+                actual_prepare_volume=prepare_i,
+                actual_concentration=actual_conc,
+                transfer_out=transfer_out,
+                remaining_volume=remaining,
+                retained_volume=retained[i - 1],
+                relative_deviation=deviation,
+                tolerance=tolerance,
+                concentration_ok=concentration_ok,
+                remaining_ok=remaining_ok,
+                issues=issues,
+            )
+        )
+        # 下一管以本管实算浓度回算
+        prev_actual_conc = actual_conc
+
+    return Review(steps=steps)

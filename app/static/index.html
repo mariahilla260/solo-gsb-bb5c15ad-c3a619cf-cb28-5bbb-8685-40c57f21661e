@@ -53,21 +53,59 @@
     </section>
 
     <section id="results" hidden>
-      <div class="card" id="summary-card">
-        <h2>结果汇总</h2>
-        <div id="summary-banner"></div>
-        <div class="summary-grid">
-          <div class="summary-item">
-            <span class="summary-label">母液总消耗</span>
-            <span class="summary-value" id="total-stock"></span>
+      <div class="results-grid">
+        <div id="plan-pane">
+          <div class="card" id="summary-card">
+            <h2>结果汇总</h2>
+            <div id="summary-banner"></div>
+            <div class="summary-grid">
+              <div class="summary-item">
+                <span class="summary-label">母液总消耗</span>
+                <span class="summary-value" id="total-stock"></span>
+              </div>
+              <div class="summary-item">
+                <span class="summary-label">稀释液总消耗</span>
+                <span class="summary-value" id="total-diluent"></span>
+              </div>
+            </div>
           </div>
-          <div class="summary-item">
-            <span class="summary-label">稀释液总消耗</span>
-            <span class="summary-value" id="total-diluent"></span>
+          <div id="steps"></div>
+        </div>
+
+        <div class="card" id="review-card">
+          <h2>执行复核</h2>
+          <p class="hint">
+            按方案实际操作后，逐管录入实际取入量与实际加稀释液量，并设置统一的目标浓度相对容差
+            （如 0.05 表示 ±5%）。后端按管序以母液或上一管实算浓度回算各管实际浓度，
+            并逐管核算余量（实配总量扣除下一管实际取液，末管余量等于实配总量）。
+          </p>
+          <label class="tolerance">目标浓度相对容差
+            <input type="number" id="tolerance" step="any" min="0" value="0.05">
+          </label>
+          <div class="review-table-wrap">
+            <table id="review-table">
+              <thead>
+                <tr>
+                  <th>管号</th>
+                  <th>目标浓度</th>
+                  <th>实际取入量</th>
+                  <th>实际加液量</th>
+                  <th>实际浓度</th>
+                  <th>相对偏差</th>
+                  <th>余量 / 要求保留</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody id="review-body"></tbody>
+            </table>
           </div>
+          <div class="actions">
+            <button type="button" id="review-btn" class="btn primary">执行复核</button>
+          </div>
+          <div id="review-banner" class="banner" hidden></div>
+          <p id="review-error" class="error" hidden></p>
         </div>
       </div>
-      <div id="steps"></div>
     </section>
   </main>
 

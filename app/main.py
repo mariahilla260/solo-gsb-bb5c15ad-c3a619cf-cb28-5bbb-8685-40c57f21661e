@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .calc import compute_plan
+from .calc import compute_plan, compute_review
 
 # Decimal 计算精度（有效位数），足够覆盖多管连除的累积误差
 getcontext().prec = 50
@@ -26,6 +26,13 @@ class TubeIn(BaseModel):
     retained_volume: Decimal = Field(..., description="保留体积")
 
 
+class ReviewTubeIn(BaseModel):
+    target_concentration: Decimal = Field(..., description="目标浓度")
+    retained_volume: Decimal = Field(..., description="要求保留体积")
+    actual_transfer_in: Decimal = Field(..., description="实际取入量")
+    actual_diluent: Decimal = Field(..., description="实际加稀释液量")
+
+
 class CalcRequest(BaseModel):
     stock_concentration: Decimal = Field(..., description="母液浓度")
     loss_volume: Decimal = Field(Decimal("0"), description="每管预留损耗体积")
@@ -33,6 +40,15 @@ class CalcRequest(BaseModel):
     concentration_unit: str = Field("", description="浓度单位（仅展示）")
     volume_unit: str = Field("µL", description="体积单位（仅展示）")
     tubes: List[TubeIn]
+
+
+class ReviewRequest(BaseModel):
+    stock_concentration: Decimal = Field(..., description="母液浓度")
+    concentration_unit: str = Field("", description="浓度单位（仅展示）")
+    volume_unit: str = Field("µL", description="体积单位（仅展示）")
+    # 统一的目标浓度相对容差，0.05 表示 ±5%
+    tolerance: Decimal = Field(..., description="目标浓度相对容差（0.05 表示 ±5%）")
+    tubes: List[ReviewTubeIn]
 
 
 def _check_number(value: Decimal, name: str, allow_zero: bool = False) -> None:
@@ -64,6 +80,31 @@ def calculate(req: CalcRequest) -> dict:
         retained=[t.retained_volume for t in req.tubes],
     )
     result = plan.to_dict()
+    result["concentration_unit"] = req.concentration_unit
+    result["volume_unit"] = req.volume_unit
+    return result
+
+
+@app.post("/api/review")
+def review(req: ReviewRequest) -> dict:
+    _check_number(req.stock_concentration, "母液浓度")
+    _check_number(req.tolerance, "目标浓度相对容差", allow_zero=True)
+    if not 1 <= len(req.tubes) <= 50:
+        raise HTTPException(status_code=400, detail="管数需在 1~50 之间")
+    for idx, tube in enumerate(req.tubes, start=1):
+        _check_number(tube.target_concentration, f"管 {idx} 目标浓度")
+        _check_number(tube.retained_volume, f"管 {idx} 保留体积")
+        _check_number(tube.actual_transfer_in, f"管 {idx} 实际取入量", allow_zero=True)
+        _check_number(tube.actual_diluent, f"管 {idx} 实际加稀释液量", allow_zero=True)
+
+    result = compute_review(
+        stock_concentration=req.stock_concentration,
+        targets=[t.target_concentration for t in req.tubes],
+        retained=[t.retained_volume for t in req.tubes],
+        actual_transfer_in=[t.actual_transfer_in for t in req.tubes],
+        actual_diluent=[t.actual_diluent for t in req.tubes],
+        tolerance=req.tolerance,
+    ).to_dict()
     result["concentration_unit"] = req.concentration_unit
     result["volume_unit"] = req.volume_unit
     return result
