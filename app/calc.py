@@ -28,6 +28,17 @@ def fmt_precise(value: Decimal) -> str:
     return f"{value:.10g}"
 
 
+def fmt_percent(value: Decimal) -> str:
+    """百分比格式：输入为小数（如 0.125），输出 "12.5%"。"""
+    return fmt(value * 100) + "%"
+
+
+def fmt_signed_percent(value: Decimal) -> str:
+    """带正负号的百分比格式，正值加 "+" 前缀。"""
+    text = fmt_percent(value)
+    return ("+" + text) if value > 0 else text
+
+
 @dataclass
 class Step:
     tube: int                      # 管号（1 起）
@@ -146,3 +157,119 @@ def compute_plan(
         )
 
     return Plan(steps=steps, total_stock=transfer_in[1], total_diluent=total_diluent)
+
+
+@dataclass
+class ReviewStep:
+    tube: int                       # 管号（1 起）
+    source: str                     # 取液来源：母液 / 管 i-1
+    target_concentration: Decimal   # 本管目标浓度
+    actual_transfer_in: Decimal     # 实际取入量
+    actual_diluent: Decimal         # 实际加稀释液量
+    actual_total: Decimal           # 实配总量 = 实际取入量 + 实际加稀释液量
+    actual_concentration: Decimal   # 实算浓度（按上一级实算浓度回算）
+    relative_deviation: Decimal     # 相对偏差 = (实算浓度 - 目标浓度) / 目标浓度
+    next_transfer_in: Decimal       # 下一管实际取液量（末管为 0）
+    remaining: Decimal              # 余量 = 实配总量 - 下一管实际取液量（末管即实配总量）
+    retained_volume: Decimal        # 该管要求保留体积
+    issues: List[str] = field(default_factory=list)
+
+    @property
+    def passed(self) -> bool:
+        return not self.issues
+
+
+@dataclass
+class Review:
+    steps: List[ReviewStep]
+    relative_tolerance: Decimal  # 统一的目标浓度相对容差（小数）
+
+    @property
+    def passed(self) -> bool:
+        return all(s.passed for s in self.steps)
+
+    def to_dict(self) -> dict:
+        return {
+            "passed": self.passed,
+            "relative_tolerance": fmt(self.relative_tolerance),
+            "relative_tolerance_percent": fmt(self.relative_tolerance * 100),
+            "steps": [
+                {
+                    "tube": s.tube,
+                    "source": s.source,
+                    "target_concentration": fmt(s.target_concentration),
+                    "actual_concentration": fmt(s.actual_concentration),
+                    "relative_deviation": fmt(s.relative_deviation),
+                    "relative_deviation_percent": fmt_signed_percent(s.relative_deviation),
+                    "actual_transfer_in": fmt(s.actual_transfer_in),
+                    "actual_diluent": fmt(s.actual_diluent),
+                    "actual_total": fmt(s.actual_total),
+                    "next_transfer_in": fmt(s.next_transfer_in),
+                    "remaining": fmt(s.remaining),
+                    "retained_volume": fmt(s.retained_volume),
+                    "passed": s.passed,
+                    "issues": s.issues,
+                }
+                for s in self.steps
+            ],
+        }
+
+
+def compute_review(
+    stock_concentration: Decimal,
+    relative_tolerance: Decimal,
+    targets: List[Decimal],
+    retained: List[Decimal],
+    actual_transfer_in: List[Decimal],
+    actual_diluent: List[Decimal],
+) -> Review:
+    """执行复核计算（全程 Decimal）。
+
+    1. 按管序以母液浓度或上一管的实算浓度回算各管实际浓度：
+       实算浓度 Cᵢ = Cᵢ₋₁ · 实际取入量 / (实际取入量 + 实际加稀释液量)；
+    2. 相对偏差 = (实算浓度 - 目标浓度) / 目标浓度，绝对值超过统一容差判定浓度超差；
+    3. 余量 = 实配总量 - 下一管实际取液量（末管余量即其实配总量），
+       低于该管要求保留体积判定余量不足。
+    """
+    n = len(targets)
+    steps: List[ReviewStep] = []
+    prev_conc = stock_concentration  # 上一级实算浓度，第 1 管为母液浓度
+    for i in range(1, n + 1):
+        tin = actual_transfer_in[i - 1]
+        diluent = actual_diluent[i - 1]
+        total = tin + diluent
+        concentration = prev_conc * tin / total
+        deviation = (concentration - targets[i - 1]) / targets[i - 1]
+        next_in = actual_transfer_in[i] if i < n else Decimal(0)
+        remaining = total - next_in
+
+        issues: List[str] = []
+        if abs(deviation) > relative_tolerance:
+            issues.append(
+                f"浓度超差：相对偏差 {fmt_signed_percent(deviation)} "
+                f"超出容差 ±{fmt_percent(relative_tolerance)}"
+            )
+        if remaining < retained[i - 1]:
+            issues.append(
+                f"余量 {fmt(remaining)} 低于该管要求保留体积 {fmt(retained[i - 1])}"
+            )
+
+        steps.append(
+            ReviewStep(
+                tube=i,
+                source="母液" if i == 1 else f"管 {i - 1}",
+                target_concentration=targets[i - 1],
+                actual_transfer_in=tin,
+                actual_diluent=diluent,
+                actual_total=total,
+                actual_concentration=concentration,
+                relative_deviation=deviation,
+                next_transfer_in=next_in,
+                remaining=remaining,
+                retained_volume=retained[i - 1],
+                issues=issues,
+            )
+        )
+        prev_conc = concentration
+
+    return Review(steps=steps, relative_tolerance=relative_tolerance)

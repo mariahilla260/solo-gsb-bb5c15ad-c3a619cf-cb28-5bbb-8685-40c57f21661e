@@ -129,7 +129,8 @@ td input { width: 100%; }
 
 .error { color: var(--bad); font-size: 14px; margin: 10px 0 0; }
 
-#summary-banner {
+#summary-banner,
+#review-banner {
   padding: 10px 14px;
   border-radius: 6px;
   font-weight: 600;
@@ -137,8 +138,10 @@ td input { width: 100%; }
   font-size: 15px;
 }
 
-#summary-banner.ok { background: var(--ok-bg); color: var(--ok); }
-#summary-banner.bad { background: var(--bad-bg); color: var(--bad); }
+#summary-banner.ok,
+#review-banner.ok { background: var(--ok-bg); color: var(--ok); }
+#summary-banner.bad,
+#review-banner.bad { background: var(--bad-bg); color: var(--bad); }
 
 .summary-grid {
   display: grid;
@@ -206,6 +209,29 @@ td input { width: 100%; }
 }
 
 .issues li { padding: 2px 0; }
+
+.hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* 复核结果表：数值列等宽数字，不合格行标红 */
+#review-result-table td,
+#review-result-table th {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#review-result-table tr.review-bad td { background: var(--bad-bg); }
+
+#review-result-table tr.review-issues-row td {
+  background: #fff;
+  white-space: normal;
+  padding: 4px 10px 10px;
+}
+
+#review-result-table .issues { margin: 0; }
 
 footer {
   text-align: center;

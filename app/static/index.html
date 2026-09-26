@@ -68,6 +68,53 @@
         </div>
       </div>
       <div id="steps"></div>
+
+      <div class="card" id="review-card">
+        <h2>执行复核</h2>
+        <p class="hint">
+          按管录入实际取入量与实际加稀释液量（已按方案预填，可按实际执行修改），并设置统一的目标浓度相对容差；
+          后端将按管序以母液或上一管的实算浓度回算各管实际浓度，并逐管核对余量是否满足保留要求。
+        </p>
+        <div class="grid">
+          <label>目标浓度相对容差（%）
+            <input type="number" id="tolerance-percent" step="any" min="0" value="5">
+          </label>
+        </div>
+        <table id="review-table">
+          <thead>
+            <tr>
+              <th>管号</th>
+              <th id="review-th-in">实际取入量</th>
+              <th id="review-th-dil">实际加稀释液量</th>
+            </tr>
+          </thead>
+          <tbody id="review-body"></tbody>
+        </table>
+        <div class="actions">
+          <button type="button" id="review-submit" class="btn primary">提交复核</button>
+        </div>
+        <p id="review-error" class="error" hidden></p>
+      </div>
+
+      <div class="card" id="review-result-card" hidden>
+        <h2>复核结果</h2>
+        <div id="review-banner"></div>
+        <table id="review-result-table">
+          <thead>
+            <tr>
+              <th>管号</th>
+              <th id="rr-th-target">目标浓度</th>
+              <th id="rr-th-actual">实际浓度</th>
+              <th>相对偏差</th>
+              <th id="rr-th-total">实配总量</th>
+              <th id="rr-th-remaining">余量</th>
+              <th id="rr-th-retained">要求保留</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody id="review-result-body"></tbody>
+        </table>
+      </div>
     </section>
   </main>
 
