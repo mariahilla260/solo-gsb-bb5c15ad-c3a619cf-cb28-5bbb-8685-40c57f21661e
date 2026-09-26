@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>串联稀释配液计算器</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>串联稀释配液计算器</h1>
+    <p class="subtitle">从末管向前回推制备量，逐级计算取液量与稀释液量，自动标出不可行步骤</p>
+  </header>
+
+  <main>
+    <section class="card" id="input-card">
+      <h2>参数设置</h2>
+      <div class="grid">
+        <label>母液浓度
+          <input type="number" id="stock-conc" step="any" min="0" value="1000">
+        </label>
+        <label>浓度单位
+          <input type="text" id="conc-unit" value="µM" placeholder="如 µM、mg/mL">
+        </label>
+        <label>体积单位
+          <input type="text" id="vol-unit" value="µL" placeholder="如 µL、mL">
+        </label>
+        <label>每管预留损耗（体积）
+          <input type="number" id="loss" step="any" min="0" value="10">
+        </label>
+        <label>移液下限（体积）
+          <input type="number" id="pipette-min" step="any" min="0" value="2">
+        </label>
+      </div>
+
+      <h2>稀释管（目标浓度需逐级递减）</h2>
+      <table id="tubes-table">
+        <thead>
+          <tr>
+            <th>管号</th>
+            <th>目标浓度</th>
+            <th>保留体积</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tubes-body"></tbody>
+      </table>
+      <div class="actions">
+        <button type="button" id="add-tube" class="btn secondary">＋ 添加一管</button>
+        <button type="button" id="calc" class="btn primary">计算配液方案</button>
+      </div>
+      <p id="form-error" class="error" hidden></p>
+    </section>
+
+    <section id="results" hidden>
+      <div class="card" id="summary-card">
+        <h2>结果汇总</h2>
+        <div id="summary-banner"></div>
+        <div class="summary-grid">
+          <div class="summary-item">
+            <span class="summary-label">母液总消耗</span>
+            <span class="summary-value" id="total-stock"></span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">稀释液总消耗</span>
+            <span class="summary-value" id="total-diluent"></span>
+          </div>
+        </div>
+      </div>
+      <div id="steps"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>可行性按未取整值判断；页面显示的数值为 4 位小数舍入结果。</p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

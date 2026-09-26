@@ -1,0 +1,7 @@
+services:
+  dilution:
+    build: .
+    container_name: serial-dilution
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
